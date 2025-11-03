@@ -37,6 +37,10 @@ func (c Config) Build(set component.TelemetrySettings) (operator.Operator, error
 		return nil, err
 	}
 
+	if c.ReadTimeout < 0 {
+		return nil, fmt.Errorf("invalid value '%s' for parameter 'read_timeout'", c.ReadTimeout)
+	}
+
 	return &Input{
 		InputOperator: inputOperator,
 		newCmd: func(ctx context.Context, cursor []byte) cmd {
@@ -50,6 +54,7 @@ func (c Config) Build(set component.TelemetrySettings) (operator.Operator, error
 		},
 		convertMessageBytes: c.ConvertMessageBytes,
 		json:                jsoniter.ConfigFastest,
+		readTimeout:         c.ReadTimeout,
 	}, nil
 }
 

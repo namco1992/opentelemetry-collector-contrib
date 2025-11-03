@@ -4,6 +4,8 @@
 package journald // import "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/operator/input/journald"
 
 import (
+	"time"
+
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/operator/helper"
 )
 
@@ -39,6 +41,7 @@ type Config struct {
 	All                 bool          `mapstructure:"all,omitempty"`
 	Namespace           string        `mapstructure:"namespace,omitempty"`
 	ConvertMessageBytes bool          `mapstructure:"convert_message_bytes,omitempty"`
+	ReadTimeout         time.Duration `mapstructure:"read_timeout,omitempty"`
 }
 
 type MatchConfig map[string]string
