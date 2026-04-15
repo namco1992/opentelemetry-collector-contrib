@@ -9,11 +9,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -248,147 +246,6 @@ func (l *logsReceiver) processLogs(now pcommon.Timestamp, logs []map[string]any)
 		for _, log := range logGroup {
 			logRecord := scopeLogs.LogRecords().AppendEmpty()
 			logRecord.SetObservedTimestamp(now)
-
-			if v, ok := log[l.cfg.TimestampField]; ok {
-				switch l.cfg.TimestampFormat {
-				case "unix":
-					var sec int64
-					switch val := v.(type) {
-					case int:
-						sec = int64(val)
-					case int64:
-						sec = val
-					case float64:
-						sec = int64(val)
-					case string:
-						i, err := strconv.ParseInt(val, 10, 64)
-						if err != nil {
-							l.logger.Warn("unable to parse "+l.cfg.TimestampField+" as unix seconds", zap.Error(err), zap.String("value", val))
-							continue
-						}
-						sec = i
-					default:
-						l.logger.Warn("unable to parse "+l.cfg.TimestampField, zap.String("unsupported type", fmt.Sprintf("%T", v)))
-						continue
-					}
-					logRecord.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(sec, 0)))
-				case "unixnano":
-					var nano int64
-					switch val := v.(type) {
-					case int:
-						nano = int64(val)
-					case int64:
-						nano = val
-					case float64:
-						nano = int64(val)
-					case string:
-						i, err := strconv.ParseInt(val, 10, 64)
-						if err != nil {
-							l.logger.Warn("unable to parse "+l.cfg.TimestampField+" as unixnano", zap.Error(err), zap.String("value", val))
-							continue
-						}
-						nano = i
-					default:
-						l.logger.Warn("unable to parse "+l.cfg.TimestampField, zap.String("unsupported type", fmt.Sprintf("%T", v)))
-						continue
-					}
-					logRecord.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(0, nano)))
-				case "rfc3339":
-					strVal, ok := v.(string)
-					if !ok {
-						l.logger.Warn("unable to parse "+l.cfg.TimestampField+" as rfc3339, not a string", zap.Any("value", v), zap.String("type", fmt.Sprintf("%T", v)))
-						continue
-					}
-					ts, err := time.Parse(time.RFC3339, strVal)
-					if err != nil {
-						l.logger.Warn("unable to parse "+l.cfg.TimestampField+" as rfc3339", zap.Error(err), zap.String("value", strVal))
-						continue
-					}
-					logRecord.SetTimestamp(pcommon.NewTimestampFromTime(ts))
-				default:
-					l.logger.Warn("unknown timestamp_format configuration", zap.String("timestamp_format", l.cfg.TimestampFormat))
-				}
-			} else {
-				l.logger.Warn("unable to parse "+l.cfg.TimestampField, zap.Any("value", v))
-			}
-
-			if v, ok := log["EdgeResponseStatus"]; ok {
-				sev := plog.SeverityNumberUnspecified
-				switch v := v.(type) {
-				case string:
-					intV, err := strconv.ParseInt(v, 10, 64)
-					if err != nil {
-						l.logger.Warn("unable to parse EdgeResponseStatus", zap.Error(err), zap.String("value", v))
-					} else {
-						sev = severityFromStatusCode(intV)
-					}
-				case int64:
-					sev = severityFromStatusCode(v)
-				case float64:
-					sev = severityFromStatusCode(int64(v))
-				}
-				if sev != plog.SeverityNumberUnspecified {
-					logRecord.SetSeverityNumber(sev)
-					logRecord.SetSeverityText(sev.String())
-				}
-			}
-
-			attrs := logRecord.Attributes()
-			for field, v := range log {
-				attrName := field
-				if len(l.cfg.Attributes) != 0 {
-					// Only process fields that are in the config mapping
-					mappedAttr, ok := l.cfg.Attributes[field]
-					if !ok {
-						// Skip fields not in mapping when we have a config
-						continue
-					}
-					attrName = mappedAttr
-				}
-				// else if l.cfg.Attributes is empty, default to processing all fields with no renaming
-
-				switch v := v.(type) {
-				case string:
-					attrs.PutStr(attrName, v)
-				case int:
-					attrs.PutInt(attrName, int64(v))
-				case int64:
-					attrs.PutInt(attrName, v)
-				case float64:
-					attrs.PutDouble(attrName, v)
-				case bool:
-					attrs.PutBool(attrName, v)
-				case map[string]any:
-					// Flatten the map and add each field with a prefixed key
-					flattened := make(map[string]any)
-					flattenMap(v, attrName+l.cfg.Separator, l.cfg.Separator, flattened)
-					for k, val := range flattened {
-						switch v := val.(type) {
-						case string:
-							attrs.PutStr(k, v)
-						case int:
-							attrs.PutInt(k, int64(v))
-						case int64:
-							attrs.PutInt(k, v)
-						case float64:
-							attrs.PutDouble(k, v)
-						case bool:
-							attrs.PutBool(k, v)
-						default:
-							l.logger.Warn("unable to translate flattened field to attribute, unsupported type",
-								zap.String("field", k),
-								zap.Any("value", v),
-								zap.String("type", fmt.Sprintf("%T", v)))
-						}
-					}
-				default:
-					l.logger.Warn("unable to translate field to attribute, unsupported type",
-						zap.String("field", field),
-						zap.Any("value", v),
-						zap.String("type", fmt.Sprintf("%T", v)))
-				}
-			}
-
 			err := logRecord.Body().SetEmptyMap().FromRaw(log)
 			if err != nil {
 				l.logger.Warn("unable to set body", zap.Error(err))
